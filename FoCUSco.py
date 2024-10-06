@@ -38,6 +38,9 @@ def gatherCSVs(dir, progress_bar, total_files):
                 progress_bar['value'] = (processed_files / total_files) * 100
                 progress_bar.update()
 
+                if progress_bar['value'] == 100:
+                    progress_window.destroy()
+
     return pd.concat(all_dfs) if all_dfs else pd.DataFrame()
 
 def countCSVFiles(dir):
@@ -81,10 +84,12 @@ def createProgressBar():
     label.pack(pady=10)
     progress_bar = ttk.Progressbar(progress_window, length=300, mode='determinate')
     progress_bar.pack(pady=20)
-    return progress_bar
+    return progress_window, progress_bar
 
 directory = selectDirectory()
 sample_list = detectSampleNames(directory)
+
+checkForOldCombinedResults(directory)
 
 correct_samples = confirmSampleNames(sample_list)
 if not correct_samples:
@@ -96,14 +101,14 @@ if total_files == 0:
     print("No CSV files found in directory")
     quit()
 
-progress_bar = createProgressBar()
+
+progress_window, progress_bar = createProgressBar()
 combined_df = gatherCSVs(directory, progress_bar, total_files)
 
 def main():
     root = tk.Tk()
     root.withdraw()
 
-    checkForOldCombinedResults(directory)
 
     now = datetime.now()
     date_str = now.strftime("%y-%m-%d")
@@ -127,9 +132,8 @@ def main():
     else:
         print("ERROR: No .csv files found in directory")
 
-    root.destroy()
-
     input("Program finished without errors, press enter to exit...") 
+    root.destroy()
 
 if __name__ == "__main__":
     main()
