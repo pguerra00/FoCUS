@@ -29,10 +29,10 @@ function renameWindow(old_name, new_name){
 
 function truncate(name, delimiter, offset){
 	if (delimiter == ".") {
-		return substring(name, 0, indexOf(name, ".")));
+		return substring(name, 0, indexOf(name, "."));
 	}
 	if (delimiter == "_") {
-		return substring(name, 0, lastIndexOf(name, "_") + 1));
+		return substring(name, 0, lastIndexOf(name, "_") + 1);
 	} else {
 	return name;
 	}
