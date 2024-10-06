@@ -17,7 +17,7 @@
 - shutil
 
 ### FIJI and FoCUS Macro Suite
-FIJI (ImageJ) must be installed: Download FIJI.<br>
+FIJI (ImageJ) must be installed.<br>
 The FoCUS macro suite should be configured and used within FIJI to generate the necessary CSV files containing foci counting data.
 
 ## Usage
