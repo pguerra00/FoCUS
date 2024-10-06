@@ -31,8 +31,6 @@ def gatherCSVs(dir, progress_bar, total_files):
                 temp_df = pd.read_csv(file)
                 temp_df['Sample'] = file.name
                 all_dfs.append(temp_df)
-                
-                time.sleep(0.1)
 
                 processed_files += 1
                 progress_bar['value'] = (processed_files / total_files) * 100
@@ -49,7 +47,7 @@ def countCSVFiles(dir):
 
 def detectSampleNames(dir):
     patt = re.compile(r'(.*)_')
-    return {match.group(1) for folder in dir.iterdir() if not folder.name.startswith('.') for match in [patt.match(folder.name)] if match}
+    return {match.group(1) for folder in dir.iterdir() if not folder.name.startswith('.') and not folder.name.startswith('CombinedResults') for match in [patt.match(folder.name)] if match}
 
 def confirmSampleNames(lista):
     message = '\n'.join(lista)
@@ -111,8 +109,8 @@ def main():
 
 
     now = datetime.now()
-    date_str = now.strftime("%y-%m-%d")
-    time_str = now.strftime("%H-%M-%S")
+    date_str = now.strftime("%y%m%d")
+    time_str = now.strftime("%H-%M")
 
     if not combined_df.empty:
         for sample in sample_list:
