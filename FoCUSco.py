@@ -5,11 +5,10 @@ import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox, ttk
 from datetime import datetime
 import shutil
-import time
 
 def selectDirectory():
-    root = tk.Tk()
-    root.withdraw()
+    # root = tk.Tk()
+    # root.withdraw()
 
     selected_directory = filedialog.askdirectory(title="Select Experiment Directory")
 
@@ -84,6 +83,8 @@ def createProgressBar():
     progress_bar.pack(pady=20)
     return progress_window, progress_bar
 
+root = tk.Tk()
+root.withdraw()
 directory = selectDirectory()
 sample_list = detectSampleNames(directory)
 
@@ -99,15 +100,10 @@ if total_files == 0:
     print("No CSV files found in directory")
     quit()
 
-
 progress_window, progress_bar = createProgressBar()
 combined_df = gatherCSVs(directory, progress_bar, total_files)
 
 def main():
-    root = tk.Tk()
-    root.withdraw()
-
-
     now = datetime.now()
     date_str = now.strftime("%y%m%d")
     time_str = now.strftime("%H-%M")
