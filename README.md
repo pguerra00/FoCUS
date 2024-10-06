@@ -1,2 +1,2 @@
 # FoCUS
-Foci Counting and Utility System - Gupta Lab UNC Chapel Hill
+Foci Counting and Utility System - Gaorav Gupta Lab UNC Chapel Hill
