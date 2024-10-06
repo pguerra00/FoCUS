@@ -4,6 +4,7 @@ import re
 import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox, ttk
 from datetime import datetime
+import shutil
 import time
 
 def selectDirectory():
@@ -40,7 +41,6 @@ def gatherCSVs(dir, progress_bar, total_files):
     return pd.concat(all_dfs) if all_dfs else pd.DataFrame()
 
 def countCSVFiles(dir):
-    # Helper function to count how many CSV files exist in the directory and subdirectories
     total_files = sum(1 for folder in dir.iterdir() if folder.is_dir() for file in folder.glob("*.csv"))
     return total_files
 
@@ -49,16 +49,30 @@ def detectSampleNames(dir):
     return {match.group(1) for folder in dir.iterdir() if not folder.name.startswith('.') for match in [patt.match(folder.name)] if match}
 
 def confirmSampleNames(lista):
-    # Show a message box and wait for the user to press OK
     message = '\n'.join(lista)
     return messagebox.askokcancel("", f"Confirm detected samples:\n\n{message}")
+
+def getReplaceChoice(folder_name):
+    return messagebox.askyesnocancel("", f"Old CombinedResults found in this directory:\n\n({folder_name})\n\nWould you like to replace it?")
 
 def checkForOldCombinedResults(dir):
     for folder in dir.iterdir():
         if folder.is_dir():
             if folder.name.startswith("CombinedResults"):
-                return (True, folder.name)
-    return (False, "")
+                choice = getReplaceChoice(folder.name)
+                if choice is True:
+                    confirmation = messagebox.askyesno("", f"Are you sure you want to delete and replace {folder.name}?")
+                    if confirmation is True:
+                        shutil.rmtree(folder)
+                        print(f"Replacing {folder.name}")
+                    else:
+                        print("Not replacing")
+                        quit()
+                elif choice is False:
+                    print("Not replacing")
+                elif choice is None:
+                    print("Aborting")
+                    quit()
 
 def createProgressBar():
     progress_window = tk.Toplevel()
@@ -69,27 +83,9 @@ def createProgressBar():
     progress_bar.pack(pady=20)
     return progress_bar
 
-root = tk.Tk()
-root.withdraw()
-
-# PROMPT USER TO SELECT DIRECTORY
 directory = selectDirectory()
-old_combined_results = checkForOldCombinedResults(directory)
-if old_combined_results[0]:
-    # Line below returns True, False or None for Yes, No or Cancel respectively
-    choice = messagebox.askyesnocancel("", f"Old CombinedResults found in this directory:\n\n({old_combined_results[1]})\n\nWould you like to replace it?")
-    if choice:
-        # old_combined_results[1].rmdir()
-        print("Replacing old CombinedResults")
-    elif choice is not None:
-        print("Not replacing")
-        quit() 
-    elif choice is None:
-        print("Aborting")
-        quit()
-
-# GATHER AND CONFIRM SAMPLES FROM DIRECTORY
 sample_list = detectSampleNames(directory)
+
 correct_samples = confirmSampleNames(sample_list)
 if not correct_samples:
     print("Check directory, aborting")
@@ -99,32 +95,41 @@ total_files = countCSVFiles(directory)
 if total_files == 0:
     print("No CSV files found in directory")
     quit()
-progress_bar = createProgressBar()
 
+progress_bar = createProgressBar()
 combined_df = gatherCSVs(directory, progress_bar, total_files)
 
-now = datetime.now()
-date_str = now.strftime("%y-%m-%d")
-time_str = now.strftime("%H-%M-%S")
+def main():
+    root = tk.Tk()
+    root.withdraw()
 
-if not combined_df.empty:
-    for sample in sample_list:
-        filtered_df = combined_df[combined_df['Sample'].str.contains(sample, regex=False)]
-        if not filtered_df.empty:
-            new_dir = directory / f"CombinedResults_({date_str}_{time_str})"
+    checkForOldCombinedResults(directory)
 
-            filename = f"{sample}_results_combined.csv"
-            new_dir.mkdir(parents=True, exist_ok=True)
-            file_path = new_dir / filename
-            filtered_df.to_csv(file_path, index=False)
+    now = datetime.now()
+    date_str = now.strftime("%y-%m-%d")
+    time_str = now.strftime("%H-%M-%S")
 
-            print(f'Successfully created combined results file for: {sample}')
-            
-        else:
-            print(f'No .csv files with "{sample}" prefix were found in this directory')
-else:
-    print("ERROR: No .csv files found in directory")
+    if not combined_df.empty:
+        for sample in sample_list:
+            filtered_df = combined_df[combined_df['Sample'].str.contains(sample, regex=False)]
+            if not filtered_df.empty:
+                new_dir = directory / f"CombinedResults_({date_str}_{time_str})"
 
-root.destroy()
+                filename = f"{sample}_results_combined.csv"
+                new_dir.mkdir(parents=True, exist_ok=True)
+                file_path = new_dir / filename
+                filtered_df.to_csv(file_path, index=False)
 
-input("Program finished without errors, press enter to exit...") 
+                print(f'Successfully created combined results file for: {sample}')
+                
+            else:
+                print(f'No .csv files with "{sample}" prefix were found in this directory')
+    else:
+        print("ERROR: No .csv files found in directory")
+
+    root.destroy()
+
+    input("Program finished without errors, press enter to exit...") 
+
+if __name__ == "__main__":
+    main()
