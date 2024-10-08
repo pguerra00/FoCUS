@@ -60,9 +60,17 @@ function setBatchSize(){
 	return Dialog.getNumber();
 }
 
+function confirmStartup(){
+	Dialog.create("Before Running...");
+	Dialog.addMessage("It is highly recommended to process a single image separately before running the macro.\n" +
+	"Ensure the measurements table includes RawIntDen.\n" +
+	"DO NOT save the image in the same directory at the end of processing in order to keep the directory clean for MaskDirectory macro.\n" +
+	"Proceed?");
+	Dialog.show();
+}
+
 
 //MACROS
-
 macro "CloseAll [F9]"{
 	close("*");
 	run("Close All");
@@ -70,6 +78,7 @@ macro "CloseAll [F9]"{
 
 // For masking single images one at a time
 macro "MaskSingleImage [F1]"{
+	confirmStartup();
 	file_path = File.openDialog("Choose Image");
 	dir = File.getDirectory(file_path);
 	
@@ -110,8 +119,9 @@ macro "MaskSingleImage [F1]"{
 	
 }
 
+// for masking an entire directory at once, only images can be in this directory
 macro "MaskDirectory [F2]" {
-
+	confirmStartup();
     dir = getDirectory("Choose a Directory");
     list = getFileList(dir);
     processing_size = setProcessingSize();
@@ -169,7 +179,7 @@ macro "MaskDirectory [F2]" {
     run("Threshold...");
 }
 
-
+// count foci, can only do individual images for now
 macro "CountFoci [F3]" {
 	current_window = getTitle();
 	dash_index = lastIndexOf(current_window, "-");
