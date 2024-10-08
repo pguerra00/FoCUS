@@ -5,6 +5,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
 import shutil
+import sys
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def selectDirectory():
     """
@@ -26,7 +29,7 @@ def selectDirectory():
         return path
     else:
         print("No directory selected")
-        quit()
+        sys.exit()
 
 def gatherCSVs(dir, progress_bar, total_files):
     """
@@ -47,7 +50,7 @@ def gatherCSVs(dir, progress_bar, total_files):
     processed_files = 0
     
     for folder in dir.iterdir():
-        if folder.is_dir():
+        if folder.is_dir() and not folder.name.startswith('CombinedResults'):
             for file in folder.glob("*.csv"):
                 try:
                     temp_df = pd.read_csv(file)
@@ -58,6 +61,8 @@ def gatherCSVs(dir, progress_bar, total_files):
                     print(f"Error reading {file}: {e}")
                     continue
                 temp_df['Sample'] = file.name
+                patt = re.compile(r'(.*)_')
+                temp_df['SampleGroup'] = patt.match(file.name[:-len('_results.csv')]).group(1)
                 all_dfs.append(temp_df)
 
                 processed_files += 1
@@ -77,7 +82,7 @@ def countCSVFiles(dir):
     Returns:
         int: The total number of CSV files found in the directory and its subdirectories.
     """
-    total_files = sum(1 for folder in dir.iterdir() if folder.is_dir() for file in folder.glob("*.csv"))
+    total_files = sum(1 for folder in dir.iterdir() if folder.is_dir() and not folder.name.startswith('CombinedResults') for file in folder.glob("*.csv"))
     return total_files
 
 def detectSampleNames(dir):
@@ -154,17 +159,18 @@ def checkForOldCombinedResults(dir):
                     confirmation = messagebox.askyesno("", f"Are you sure you want to delete and replace {folder.name}?")
                     if confirmation is True:
                         shutil.rmtree(folder)
-                        print(f"Replacing {folder.name}")
+                        # print(f"Replacing {folder.name}")
                     else:
                         abort()
                 elif choice is False:
-                    print("Not replacing")
+                    pass
+                    # print("Not replacing")
                 elif choice is None:
                     abort()
 
 def abort():
     messagebox.showwarning("", f"Process aborted by user")
-    quit()
+    sys.exit()
 
 def createProgressBar():
     """
@@ -203,7 +209,7 @@ def writeCombinedResults(combined_df, sample_list, directory):
     """
     now = datetime.now()
     date_str = now.strftime("%y.%m.%d")
-    time_str = now.strftime("%H.%M")
+    time_str = now.strftime("%H.%M.%S")
 
     if not combined_df.empty:
         for sample in sample_list:
@@ -235,6 +241,23 @@ def giveFeedback():
     """
     messagebox.showinfo("", f"Process completed successfully\nFiles Processed: {total_files}\nSamples Detected: {len(sample_list)}\n")
 
+
+def plotResults(df, sample_list):
+    # Group by 'Sample' and calculate the mean of 'NumFoci'
+    df_grouped = df.groupby('SampleGroup', as_index=False)['NumFoci'].mean()
+    
+    # Create a bar plot for the mean values
+    sns.barplot(x='SampleGroup', y='NumFoci', data=df_grouped, errorbar=None, capsize=0.71)
+    
+    # Add swarm plot for individual data points
+    sns.stripplot(x='SampleGroup', y='NumFoci', data=df, color='k', size=2)
+    
+    plt.xticks(rotation=45)
+    plt.title('Mean Foci by Sample')
+    plt.ylabel('NumFoci')
+    plt.tight_layout()
+    plt.show()
+
 root = tk.Tk()
 root.withdraw()
 directory = selectDirectory()
@@ -245,12 +268,12 @@ checkForOldCombinedResults(directory)
 correct_samples = confirmSampleNames(sample_list)
 if not correct_samples:
     print("Check directory, aborting")
-    quit()
+    sys.exit()
 
 total_files = countCSVFiles(directory)
 if total_files == 0:
     print("No CSV files found in directory")
-    quit()
+    sys.exit()
 
 progress_window, progress_bar = createProgressBar()
 combined_df = gatherCSVs(directory, progress_bar, total_files)
@@ -259,6 +282,7 @@ def main():
     writeCombinedResults(combined_df, sample_list, directory)
     giveFeedback()
     root.destroy()
+    plotResults(combined_df, sample_list)
 
 if __name__ == "__main__":
     main()
