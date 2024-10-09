@@ -46,6 +46,7 @@ def gatherCSVs(dir, progress_bar, total_files):
     pd.errors.EmptyDataError: If a CSV file is empty.
     Exception: For any other errors encountered while reading a CSV file.
     """
+    global positive_threshold
     all_dfs = []
     processed_files = 0
     
@@ -63,6 +64,8 @@ def gatherCSVs(dir, progress_bar, total_files):
                 temp_df['Sample'] = file.name
                 patt = re.compile(r'(.*)_')
                 temp_df['SampleGroup'] = patt.match(file.name[:-len('_results.csv')]).group(1)
+                print("THRESH: ", positive_threshold)
+                temp_df['Positive'] = temp_df['NumFoci'] >= positive_threshold
                 all_dfs.append(temp_df)
 
                 processed_files += 1
@@ -127,6 +130,8 @@ def getReplaceChoice(folder_name):
                   and None if the user chooses 'Cancel'.
     """
     return messagebox.askyesnocancel("", f"Old CombinedResults found in this directory:\n\n({folder_name})\n\nWould you like to replace it?")
+
+# def deleteDirectory():
 
 def checkForOldCombinedResults(dir):
     """
@@ -241,20 +246,69 @@ def giveFeedback():
     """
     messagebox.showinfo("", f"Process completed successfully\nFiles Processed: {total_files}\nSamples Detected: {len(sample_list)}\n")
 
+def setPositiveThreshold(root):
+
+    top = tk.Toplevel(root)
+    top.title("Set Positive Threshold")
+    top.geometry("400x200")
+
+    frame=tk.Frame(top, padx=20, pady=20)
+    frame.pack(expand=True)
+
+    top.grid_columnconfigure(0, weight=1)
+    top.grid_columnconfigure(1, weight=1)
+
+    header_label=tk.Label(frame, text="Enter Threshold", font=("Helvetica 12 bold"))
+    header_label.grid(row = 0, column=0, columnspan=2, pady=(0, 10))
+
+    input_label=tk.Label(frame, text="Input threshold for cells\nto be considered positive", font=("Helvetica 10"))
+    input_label.grid(row = 1, column=0, pady=(0, 10))
+
+
+#Create an Entry widget to accept User Input
+    entry= tk.Entry(frame, width= 20, font=("Helvetica 12"))
+    entry.focus_set()
+    entry.grid(row=1, column=1, pady=(0, 10), sticky='w')
+    
+    def submit():    
+        result = entry.get()
+        global positive_threshold
+        positive_threshold = int(result)
+        top.destroy()
+
+    def cancel():
+        top.destroy()
+        abort()
+        
+    submit_button = tk.Button(frame, text="Submit", font=("Helvetica 12 bold"), bg="#679969", fg="white", command=submit, relief=tk.GROOVE)
+    submit_button.grid(row=2, column=1, pady=10)
+    submit_button = tk.Button(frame, text="Cancel", font=("Helvetica 12 bold"), bg="#A9A9A9", fg="white", command=cancel, relief=tk.GROOVE)
+    submit_button.grid(row=2, column=0, pady=10)
+
+    top.grab_set()
+    root.wait_window(top)
 
 def plotResults(df, sample_list):
-    # Group by 'Sample' and calculate the mean of 'NumFoci'
-    df_grouped = df.groupby('SampleGroup', as_index=False)['NumFoci'].mean()
-    
-    # Create a bar plot for the mean values
-    sns.barplot(x='SampleGroup', y='NumFoci', data=df_grouped, errorbar=None, capsize=0.71)
-    
-    # Add swarm plot for individual data points
-    sns.stripplot(x='SampleGroup', y='NumFoci', data=df, color='k', size=2)
-    
+    global positive_threshold   
+    summary_df = df.groupby('SampleGroup').agg(
+        Positive=('Positive', 'sum'),
+        Total=('Positive', 'size'),
+        PctPositive = ('Positive', lambda x: round((x.sum() / x.size) * 100, 2))
+    ).reset_index()
+    print(summary_df)
+
+    sns.barplot(x='SampleGroup', y='NumFoci', data=df, capsize=0.1, hue='SampleGroup', palette='viridis')
+    sns.stripplot(x='SampleGroup', y='NumFoci', data=df, hue='Positive', palette=({True : 'r', False : 'k'}), size=5, alpha = 0.65)
     plt.xticks(rotation=45)
-    plt.title('Mean Foci by Sample')
-    plt.ylabel('NumFoci')
+    plt.title('Focus Count by Sample')
+    plt.ylabel('Count')
+    plt.ylim(top=df['NumFoci'].max() + plt.ylim()[1]*0.2)
+    plt.xlabel(None)
+    plt.legend('',frameon=False)
+    plt.axhline(y = positive_threshold, color='r', linestyle='--')
+    for sample in sample_list:
+        pos_pct = summary_df[summary_df['SampleGroup']==sample]['PctPositive'].iloc[0]
+        plt.text(sample, plt.ylim()[1] - plt.ylim()[1]*0.1, f'% Positive: {pos_pct}\n({summary_df[summary_df['SampleGroup']==sample]['Positive'].iloc[0]}/{summary_df[summary_df['SampleGroup']==sample]['Total'].iloc[0]})', color = 'k', ha='center')
     plt.tight_layout()
     plt.show()
 
@@ -262,6 +316,9 @@ root = tk.Tk()
 root.withdraw()
 directory = selectDirectory()
 sample_list = detectSampleNames(directory)
+
+# TODO: make this a user inputted value
+positive_threshold = 0
 
 checkForOldCombinedResults(directory)
 
@@ -275,6 +332,7 @@ if total_files == 0:
     print("No CSV files found in directory")
     sys.exit()
 
+setPositiveThreshold(root)
 progress_window, progress_bar = createProgressBar()
 combined_df = gatherCSVs(directory, progress_bar, total_files)
 
@@ -283,6 +341,7 @@ def main():
     giveFeedback()
     root.destroy()
     plotResults(combined_df, sample_list)
+    exit(0)
 
 if __name__ == "__main__":
     main()
