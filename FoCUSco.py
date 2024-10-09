@@ -22,7 +22,6 @@ def selectDirectory():
     """
 
     selected_directory = filedialog.askdirectory(title="Select Experiment Directory")
-
     if selected_directory:
         path = Path(selected_directory)
         print(f"Selected directory: {path}")
@@ -46,7 +45,6 @@ def gatherCSVs(dir, progress_bar, total_files):
     pd.errors.EmptyDataError: If a CSV file is empty.
     Exception: For any other errors encountered while reading a CSV file.
     """
-    global positive_threshold
     all_dfs = []
     processed_files = 0
     
@@ -157,21 +155,19 @@ def checkForOldCombinedResults(dir):
         SystemExit: If the operation is aborted by the user.
     """
     for folder in dir.iterdir():
-        if folder.is_dir():
-            if folder.name.startswith("CombinedResults"):
-                choice = getReplaceChoice(folder.name)
-                if choice is True:
-                    confirmation = messagebox.askyesno("", f"Are you sure you want to delete and replace {folder.name}?")
-                    if confirmation is True:
-                        shutil.rmtree(folder)
-                        # print(f"Replacing {folder.name}")
-                    else:
-                        abort()
-                elif choice is False:
-                    pass
-                    # print("Not replacing")
-                elif choice is None:
+        if folder.is_dir() and folder.name.startswith('CombinedResults'):
+            choice = getReplaceChoice(folder.name)
+            if choice is True:
+                if messagebox.askyesno("", f"Are you sure you want to delete and replace {folder.name}?"):
+                    shutil.rmtree(folder)
+                    # print(f"Replacing {folder.name}")
+                else:
                     abort()
+            elif choice is False:
+                pass
+                # print("Not replacing")
+            elif choice is None:
+                abort()
 
 def abort():
     messagebox.showwarning("", f"Process aborted by user")
@@ -232,7 +228,7 @@ def writeCombinedResults(combined_df, sample_list, directory):
     else:
         print("ERROR: No .csv files found in directory")
 
-def giveFeedback():
+def giveFeedback(total_files, sample_list):
     """
     Displays a message box with information about the process completion.
 
@@ -255,30 +251,28 @@ def setPositiveThreshold(root):
     frame=tk.Frame(top, padx=20, pady=20)
     frame.pack(expand=True)
 
-    top.grid_columnconfigure(0, weight=1)
-    top.grid_columnconfigure(1, weight=1)
-
     header_label=tk.Label(frame, text="Enter Threshold", font=("Helvetica 12 bold"))
     header_label.grid(row = 0, column=0, columnspan=2, pady=(0, 10))
 
     input_label=tk.Label(frame, text="Input threshold for cells\nto be considered positive", font=("Helvetica 10"))
     input_label.grid(row = 1, column=0, pady=(0, 10))
 
-
-#Create an Entry widget to accept User Input
     entry= tk.Entry(frame, width= 20, font=("Helvetica 12"))
     entry.focus_set()
     entry.grid(row=1, column=1, pady=(0, 10), sticky='w')
     
+    result = [None]
+    
     def submit():    
-        result = entry.get()
         global positive_threshold
-        positive_threshold = int(result)
+        positive_threshold = int(entry.get())
         top.destroy()
+        result[0] = True
 
     def cancel():
         top.destroy()
-        abort()
+        # messagebox.showwarning("", f"Process aborted by user")
+        result[0] = False
         
     submit_button = tk.Button(frame, text="Submit", font=("Helvetica 12 bold"), bg="#679969", fg="white", command=submit, relief=tk.GROOVE)
     submit_button.grid(row=2, column=1, pady=10)
@@ -287,61 +281,68 @@ def setPositiveThreshold(root):
 
     top.grab_set()
     root.wait_window(top)
+    
+    return result[0]
 
 def plotResults(df, sample_list):
+    """Plots the results of focus counts by sample."""
     global positive_threshold   
     summary_df = df.groupby('SampleGroup').agg(
         Positive=('Positive', 'sum'),
         Total=('Positive', 'size'),
-        PctPositive = ('Positive', lambda x: round((x.sum() / x.size) * 100, 2))
+        PctPositive=('Positive', lambda x: round((x.sum() / x.size) * 100, 2))
     ).reset_index()
     print(summary_df)
 
     sns.barplot(x='SampleGroup', y='NumFoci', data=df, capsize=0.1, hue='SampleGroup', palette='viridis')
-    sns.stripplot(x='SampleGroup', y='NumFoci', data=df, hue='Positive', palette=({True : 'r', False : 'k'}), size=5, alpha = 0.65)
+    sns.stripplot(x='SampleGroup', y='NumFoci', data=df, hue='Positive', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
     plt.xticks(rotation=45)
     plt.title('Focus Count by Sample')
     plt.ylabel('Count')
-    plt.ylim(top=df['NumFoci'].max() + plt.ylim()[1]*0.2)
+    plt.ylim(top=df['NumFoci'].max() + plt.ylim()[1] * 0.2)
     plt.xlabel(None)
-    plt.legend('',frameon=False)
-    plt.axhline(y = positive_threshold, color='r', linestyle='--')
+    plt.legend('', frameon=False)
+    plt.axhline(y=positive_threshold, color='r', linestyle='--')
+
     for sample in sample_list:
-        pos_pct = summary_df[summary_df['SampleGroup']==sample]['PctPositive'].iloc[0]
-        plt.text(sample, plt.ylim()[1] - plt.ylim()[1]*0.1, f'% Positive: {pos_pct}\n({summary_df[summary_df['SampleGroup']==sample]['Positive'].iloc[0]}/{summary_df[summary_df['SampleGroup']==sample]['Total'].iloc[0]})', color = 'k', ha='center')
+        pos_pct = summary_df[summary_df['SampleGroup'] == sample]['PctPositive'].iloc[0]
+        plt.text(sample, plt.ylim()[1] - plt.ylim()[1] * 0.1,
+                 f'% Positive: {pos_pct}\n({summary_df[summary_df["SampleGroup"] == sample]["Positive"].iloc[0]}/{summary_df[summary_df["SampleGroup"] == sample]["Total"].iloc[0]})',
+                 color='k', ha='center')
+    
     plt.tight_layout()
     plt.show()
 
-root = tk.Tk()
-root.withdraw()
-directory = selectDirectory()
-sample_list = detectSampleNames(directory)
-
-# TODO: make this a user inputted value
-positive_threshold = 0
-
-checkForOldCombinedResults(directory)
-
-correct_samples = confirmSampleNames(sample_list)
-if not correct_samples:
-    print("Check directory, aborting")
-    sys.exit()
-
-total_files = countCSVFiles(directory)
-if total_files == 0:
-    print("No CSV files found in directory")
-    sys.exit()
-
-setPositiveThreshold(root)
-progress_window, progress_bar = createProgressBar()
-combined_df = gatherCSVs(directory, progress_bar, total_files)
-
 def main():
+    """Main function to run the program."""
+    global progress_window
+    global positive_threshold
+    root = tk.Tk()
+    root.withdraw()
+
+    directory = selectDirectory()
+    sample_list = detectSampleNames(directory)
+    positive_threshold = 0
+
+    checkForOldCombinedResults(directory)
+
+    if not confirmSampleNames(sample_list):
+        print("Check directory, aborting")
+        sys.exit()
+
+    total_files = countCSVFiles(directory)
+    if total_files == 0:
+        print("No CSV files found in directory")
+        sys.exit()
+
+    if not setPositiveThreshold(root):
+        abort()
+    progress_window, progress_bar = createProgressBar()
+    combined_df = gatherCSVs(directory, progress_bar, total_files)
+
     writeCombinedResults(combined_df, sample_list, directory)
-    giveFeedback()
-    root.destroy()
+    giveFeedback(total_files, sample_list)
     plotResults(combined_df, sample_list)
-    exit(0)
 
 if __name__ == "__main__":
     main()
