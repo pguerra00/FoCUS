@@ -2,8 +2,10 @@ var underscore_name = "";
 var number_name = "";
 var dir = "";
 var dest_directory = "";
+var previous_nRows = 0;
 
 //FUNCTION LIST
+// run gaussian subtraction on duplicated images
 function runGaussianSubtraction(window) {
 	selectWindow(window);
 	run("Duplicate...", "title=1");
@@ -22,11 +24,13 @@ function runGaussianSubtraction(window) {
 	close();
 }
 
+// rename image window
 function renameWindow(old_name, new_name){
 	selectWindow(old_name);
 	rename(new_name);
 }
 
+// truncate file_name using specified delimiter
 function truncate(name, delimiter, offset){
 	if (delimiter == ".") {
 		return substring(name, 0, indexOf(name, "."));
@@ -38,14 +42,17 @@ function truncate(name, delimiter, offset){
 	}
 }
 
-function generateMaximaMask(){
+// generate binary mask using threshold (necessary?)
+function generateMaximaMask(i){
+	// I think this might be what is acting up when running on entire directory
 	setAutoThreshold("Default dark");
-	setThreshold(20, 65535, "raw");
-	call("ij.plugin.frame.ThresholdAdjuster.setMode", "B&W");
+	setThreshold(i, 65535, "raw");
+//	call("ij.plugin.frame.ThresholdAdjuster.setMode", "B&W");
 	setOption("BlackBackground", true);
 	run("Convert to Mask");
 }
 
+// set processing size for image (8- or 16-bit)
 function setProcessingSize(){
 	Dialog.create("Choose an Option");
 	Dialog.addChoice("Processing size:", newArray("8-bit", "16-bit"));
@@ -53,6 +60,7 @@ function setProcessingSize(){
 	return Dialog.getChoice();
 }
 
+// set how many images to process at a time when using MaskDirectory macro
 function setBatchSize(){
 	Dialog.create("Choose Image Batch Size");
 	Dialog.addNumber("Batch Size", 20);
@@ -60,6 +68,14 @@ function setBatchSize(){
 	return Dialog.getNumber();
 }
 
+function setMaskThreshold(){
+	Dialog.create("Choose threshold for focus processing");
+	Dialog.addNumber("Threshold", 50);
+	Dialog.show();
+	return Dialog.getNumber();
+}
+
+// confirmation to ensure that the final results table includes the necessary measurements
 function confirmStartup(){
 	Dialog.create("Before Running...");
 	Dialog.addMessage("It is highly recommended to process a single image separately before running the macro.\n" +
@@ -82,6 +98,9 @@ macro "MaskSingleImage [F1]"{
 	file_path = File.openDialog("Choose Image");
 	dir = File.getDirectory(file_path);
 	
+	processing_size = setProcessingSize();
+	thresh = setMaskThreshold();
+	
 	file_name = File.getName(file_path);
 	
 	underscore_name = truncate(file_name, "_", 1);
@@ -89,7 +108,6 @@ macro "MaskSingleImage [F1]"{
 	dest_directory = dir + number_name + "/";
 	File.makeDirectory(dir + number_name);
 	
-	processing_size = setProcessingSize();
 	open(file_path);
 	run(processing_size);
 	
@@ -99,18 +117,21 @@ macro "MaskSingleImage [F1]"{
 	
 	run("Stack to Images");
 	
-	renameWindow(underscore_name + "-0001", number_name + "-01");
-	renameWindow(underscore_name + "-0002", number_name + "-02");
+	// rename windows so that they don't have a lot of zeroes, not really necessary but makes troubleshooting easier
+	renameWindow(underscore_name + "-0001", number_name + "-Halo");
+	renameWindow(underscore_name + "-0002", number_name + "-DAPI");
 	
-	runGaussianSubtraction(number_name + "-01");
+	runGaussianSubtraction(number_name + "-Halo");
 
+	// before thresholding, save result of gaussian subtraction
 	selectWindow("Result of 1");
 	saveAs("Tiff", dest_directory + number_name + "_pre_threshold");
 	
-	generateMaximaMask();
+	generateMaximaMask(thresh);
+	
 	saveAs("Tiff", dest_directory + number_name + "_post_threshold");
 	
-	selectWindow(number_name + "-02");
+	selectWindow(number_name + "-DAPI");
 	resetMinAndMax();
 	setAutoThreshold("Default dark");
 		
@@ -119,13 +140,14 @@ macro "MaskSingleImage [F1]"{
 	
 }
 
-// for masking an entire directory at once, only images can be in this directory
+// for masking an entire directory at once, only images can be in the selected directory for it to work
 macro "MaskDirectory [F2]" {
 	confirmStartup();
     dir = getDirectory("Choose a Directory");
     list = getFileList(dir);
     processing_size = setProcessingSize();
     images_per_batch = setBatchSize();
+    thresh = setMaskThreshold();
     current_batch_count = 0;
 
     for (i = 0; i < list.length; i++) {
@@ -149,37 +171,35 @@ macro "MaskDirectory [F2]" {
         }
 
         run("Stack to Images");
-        renameWindow(underscore_name + "-0001", number_name + "-01");
-        renameWindow(underscore_name + "-0002", number_name + "-02");
+        renameWindow(underscore_name + "-0001", number_name + "-Halo");
+        renameWindow(underscore_name + "-0002", number_name + "-DAPI");
         
-        runGaussianSubtraction(number_name + "-01");
+        runGaussianSubtraction(number_name + "-Halo");
 
         selectWindow("Result of 1");
         saveAs("Tiff", dest_directory + number_name + "_pre_threshold");
+
+        generateMaximaMask(thresh);
         
-        generateMaximaMask();
         saveAs("Tiff", dest_directory + number_name + "_post_threshold");
         
-        selectWindow(number_name + "-02");
+        selectWindow(number_name + "-DAPI");
         resetMinAndMax();
         setAutoThreshold("Default dark");
         
         current_batch_count++;
 
-        // When 20 images have been opened, pause, close them, and start the next batch
         if (current_batch_count == images_per_batch) {
     		run("Tile");
     		run("Threshold...");
             waitForUser("Review image batch, then click OK to continue with the next batch.");
-//            run("Close All");  // Close all open images after review
-            current_batch_count = 0;  // Reset the batch counter for the next batch
+            current_batch_count = 0;
         }
     }
     run("Tile");
     run("Threshold...");
 }
 
-// count foci, can only do individual images for now
 macro "CountFoci [F3]" {
 	current_window = getTitle();
 	dash_index = lastIndexOf(current_window, "-");
@@ -202,7 +222,6 @@ macro "CountFoci [F3]" {
 	close();
 	selectWindow("Current Maxima" + number_name);
 	close();
-	//close("Results");
 	
 	nRows = nResults;
 	for (i = 0; i < nRows; i++) {
@@ -219,3 +238,81 @@ macro "CountFoci [F3]" {
 		close("ROI Manager");
 	}
 }
+
+macro "RunThresholdTest" {
+	file_path = File.openDialog("Choose Image");
+	dir = File.getDirectory(file_path);
+	
+	file_name = File.getName(file_path);
+	
+	underscore_name = truncate(file_name, "_", 1);
+	number_name = truncate(file_name, ".", 0);
+	dest_directory = dir + number_name + "/";
+	File.makeDirectory(dir + number_name);
+	
+	open(file_path);
+	run("16-bit");
+	
+	source_file = dir + file_name;
+	dest_file = dest_directory + file_name;			
+	file_renamed = File.rename(source_file, dest_file);
+	
+	run("Stack to Images");
+	
+	renameWindow(underscore_name + "-0001", number_name + "-Halo");
+	renameWindow(underscore_name + "-0002", number_name + "-DAPI");
+	
+	runGaussianSubtraction(number_name + "-Halo");
+
+	selectWindow("Result of 1");
+	saveAs("Tiff", dest_directory + number_name + "_pre_threshold");
+	for (i = 10; i <= 100; i+=10) {
+		selectWindow(number_name + "_pre_threshold.tif");
+		run("Duplicate...", "title=dupe");
+		generateMaximaMask(i);
+		saveAs("Tiff", dest_directory + number_name + "_post_threshold" + i);
+	}
+	selectWindow(number_name + "-DAPI");
+	resetMinAndMax();
+	setAutoThreshold("Default dark");
+	
+	run("Analyze Particles...", "size=200-Infinity show=Outlines exclude include overlay add");
+	close();
+	saveAs("Tiff", dest_directory + number_name + "_nucleiROI");
+	close();
+	for (i = 10; i <= 100; i+=10) {
+		selectWindow(number_name + "_post_threshold" + i + ".tif");
+		run("From ROI Manager");
+		run("Find Maxima...", "prominence=10 strict exclude output=[Single Points]");
+		roiManager("Show All without labels");
+		rename("Current Maxima" + number_name);
+		roiManager("Measure");
+		selectWindow(number_name + "_post_threshold" + i + ".tif");
+		close();
+		selectWindow("Current Maxima" + number_name);
+		close();
+		//close("Results");
+		
+		current_nRows = nResults; // Get number of rows in Results table
+    	for (r = previous_nRows; r < current_nRows; r++) {
+        	setResult("Threshold", r, i);
+	        raw_intensity = getResult("RawIntDen", r);
+	        foci_count = raw_intensity / 255;
+	        setResult("NumFoci", r, foci_count);
+	    }
+	    updateResults();
+	    previous_nRows = current_nRows;
+	}
+	
+	selectWindow(number_name + "_pre_threshold.tif");
+	close();
+	
+	saveAs("Results", dest_directory + number_name + "_results.csv");
+	if (isOpen("Results")) {
+		close("Results");
+	}
+	if (isOpen("ROI Manager")){
+		close("ROI Manager");
+	}
+}	
+	

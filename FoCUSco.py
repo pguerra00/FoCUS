@@ -1,3 +1,11 @@
+'''
+Author: Paolo Guerra
+email: pguerra@email.unc.edu
+Lab: Gaorav Gupta Lab
+Lab email: gaorav.guptalab@gmail.com
+
+Copyright 2024
+'''
 from pathlib import Path
 import pandas as pd
 import re
@@ -62,7 +70,6 @@ def gatherCSVs(dir, progress_bar, total_files):
                 temp_df['Sample'] = file.name
                 patt = re.compile(r'(.*)_')
                 temp_df['SampleGroup'] = patt.match(file.name[:-len('_results.csv')]).group(1)
-                print("THRESH: ", positive_threshold)
                 temp_df['Positive'] = temp_df['NumFoci'] >= positive_threshold
                 all_dfs.append(temp_df)
 
@@ -208,6 +215,7 @@ def writeCombinedResults(combined_df, sample_list, directory):
     indicating that no CSV files with the sample prefix were found. If the combined 
     DataFrame is empty, it prints an error message.
     """
+    global summary_df
     now = datetime.now()
     date_str = now.strftime("%y.%m.%d")
     time_str = now.strftime("%H.%M.%S")
@@ -218,13 +226,28 @@ def writeCombinedResults(combined_df, sample_list, directory):
             if not filtered_df.empty:
                 new_dir = Path(directory) / f"CombinedResults_({date_str}-{time_str})"
                 new_dir.mkdir(parents=True, exist_ok=True)
+                sample_dir = new_dir / "sample_dfs"
+                sample_dir.mkdir(parents=True, exist_ok=True)
                 
                 filename = f"{sample}_results_combined.csv"
-                file_path = new_dir / filename
+                file_path = sample_dir / filename
                 filtered_df.to_csv(file_path, index=False)
                 print(f'Successfully created combined results file for: {sample}')
             else:
                 print(f'No .csv files with "{sample}" prefix were found in this directory')
+
+        combined_df_pathname = new_dir / "combined_df.csv"
+        combined_df.to_csv(combined_df_pathname, index=False)
+
+        summary_df = combined_df.groupby('SampleGroup').agg(
+        Positive=('Positive', 'sum'),
+        Total=('Positive', 'size'),
+        PctPositive=('Positive', lambda x: round((x.sum() / x.size) * 100, 2))
+        ).reset_index()
+            
+        summary_df_pathname = new_dir / 'summary_df.csv'
+        summary_df.to_csv(summary_df_pathname, index=False)
+        
     else:
         print("ERROR: No .csv files found in directory")
 
@@ -284,25 +307,27 @@ def setPositiveThreshold(root):
     
     return result[0]
 
-def plotResults(df, sample_list):
+def plotResults(combined_df, summary_df, sample_list, dir):
     """Plots the results of focus counts by sample."""
-    global positive_threshold   
-    summary_df = df.groupby('SampleGroup').agg(
-        Positive=('Positive', 'sum'),
-        Total=('Positive', 'size'),
-        PctPositive=('Positive', lambda x: round((x.sum() / x.size) * 100, 2))
-    ).reset_index()
-    print(summary_df)
+    global positive_threshold
+    # summary_df = df.groupby('SampleGroup').agg(
+    #     Positive=('Positive', 'sum'),
+    #     Total=('Positive', 'size'),
+    #     PctPositive=('Positive', lambda x: round((x.sum() / x.size) * 100, 2))
+    # ).reset_index()
 
-    sns.barplot(x='SampleGroup', y='NumFoci', data=df, capsize=0.1, hue='SampleGroup', palette='viridis')
-    sns.stripplot(x='SampleGroup', y='NumFoci', data=df, hue='Positive', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
-    plt.xticks(rotation=45)
+    # filename = Path(dir) / 'summary_df.csv'
+    # summary_df.to_csv(filename, index=False)
+    print('summary', summary_df)
+    sns.barplot(x='SampleGroup', y='NumFoci', data=combined_df, capsize=0.1, hue='SampleGroup', palette='viridis')
+    sns.stripplot(x='SampleGroup', y='NumFoci', data=combined_df, hue='Positive', palette=({True : 'r', False : 'k'}), size=5, alpha=0.65)
+    plt.xticks(rotation=90)
     plt.title('Focus Count by Sample')
     plt.ylabel('Count')
-    plt.ylim(top=df['NumFoci'].max() + plt.ylim()[1] * 0.2)
+    plt.ylim(top=combined_df['NumFoci'].max() + plt.ylim()[1] * 0.2)
     plt.xlabel(None)
     plt.legend('', frameon=False)
-    plt.axhline(y=positive_threshold, color='r', linestyle='--')
+    plt.axhline(y=positive_threshold, color='r', linestyle='dashdot', alpha=0.5)
 
     for sample in sample_list:
         pos_pct = summary_df[summary_df['SampleGroup'] == sample]['PctPositive'].iloc[0]
@@ -311,12 +336,15 @@ def plotResults(df, sample_list):
                  color='k', ha='center')
     
     plt.tight_layout()
+    # TODO: plt.savefig(r"C:\Users\Paolo_Lab\Desktop\FIJI\results_plot.png", format="png")
+    # plt.savefig("results_plot.png", format="png")
     plt.show()
 
 def main():
     """Main function to run the program."""
     global progress_window
     global positive_threshold
+    global summary_df
     root = tk.Tk()
     root.withdraw()
 
@@ -339,10 +367,11 @@ def main():
         abort()
     progress_window, progress_bar = createProgressBar()
     combined_df = gatherCSVs(directory, progress_bar, total_files)
+    summary_df = pd.DataFrame()
 
     writeCombinedResults(combined_df, sample_list, directory)
     giveFeedback(total_files, sample_list)
-    plotResults(combined_df, sample_list)
+    plotResults(combined_df, summary_df, sample_list, directory)
 
 if __name__ == "__main__":
     main()
